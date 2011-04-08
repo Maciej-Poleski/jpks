@@ -15,14 +15,9 @@ ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), logge
     connect(socket,SIGNAL(stateChanged(QAbstractSocket::SocketState)),this,SLOT(dispatchSocketState(QAbstractSocket::SocketState)));
     dispatchSocketState(socket->state());
     connect(socket,SIGNAL(readyRead()),this,SLOT(dispatchIncommingData()));
-    
-    QFile input(QCoreApplication::applicationDirPath()+"/database");
-    input.open(QIODevice::ReadOnly);
-    QDataStream stream(&input);
-    stream>>database;
-    input.close();
-    
-    databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
+    load();
+    connect(&syncTimer,SIGNAL(timeout()),this,SLOT(store()));
+    syncTimer.start(1000*60*10);
 }
 
 ControlPanelWidget::~ControlPanelWidget()
@@ -116,6 +111,8 @@ void ControlPanelWidget::attemptConnection()
 
 void ControlPanelWidget::attemptLogin()
 {
+    image="";
+    question="";
     socket->write(QString("log"+(nickLineEdit->text()==""?"NN":nickLineEdit->text())+"\n").toUtf8());
     logButton->setText(tr("Logowanie..."));
     logButton->setEnabled(false);
@@ -123,10 +120,14 @@ void ControlPanelWidget::attemptLogin()
         setClientState(true);
     else
         dispatchClientState(loggedIn);
+    connect(socket,SIGNAL(connected()),this,SLOT(attemptLogin()));
+    connect(&reconnectTimer,SIGNAL(timeout()),this,SLOT(dispatchConnectionFailure()));
 }
 
 void ControlPanelWidget::attemptLogout()
 {
+    reconnectTimer.disconnect();
+    disconnect(socket,SIGNAL(connected()),this,SLOT(attemptLogin()));
     socket->write("out\n");
     logButton->setText(tr("Wylogowywanie..."));
     logButton->setEnabled(false);
@@ -148,6 +149,7 @@ void ControlPanelWidget::abortConnection()
 
 void ControlPanelWidget::attemptDisconnect()
 {
+    reconnectTimer.disconnect();
     socket->disconnectFromHost();
 }
 
@@ -155,6 +157,7 @@ void ControlPanelWidget::dispatchIncommingData()
 {
     while(socket->canReadLine())
     {
+        reconnectTimer.start(1000*10);
         QString line=socket->readLine();
         line.truncate(line.length()-1);
         if(line.left(3)=="txt");
@@ -204,10 +207,33 @@ void ControlPanelWidget::dispatchIncommingData()
 
 void ControlPanelWidget::closeEvent(QCloseEvent *event)
 {
+    store();
+    event->accept();
+}
+
+void ControlPanelWidget::store()
+{
     QFile output(QCoreApplication::applicationDirPath()+"/database");
     output.open(QIODevice::WriteOnly);
     QDataStream stream(&output);
     stream<<database;
     output.close();
-    event->accept();
+}
+
+void ControlPanelWidget::load()
+{
+    QFile input(QCoreApplication::applicationDirPath()+"/database");
+    input.open(QIODevice::ReadOnly);
+    QDataStream stream(&input);
+    stream>>database;
+    input.close();
+    
+    databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
+}
+
+void ControlPanelWidget::dispatchConnectionFailure()
+{
+    consoleTextBrowser->append("<font color='purple'>Przekroczono dozwolony czas oczekiwania.<br/>Restartuję połączenie</font>");
+    abortConnection();
+    attemptConnection();
 }
