@@ -171,7 +171,7 @@ void ControlPanelWidget::dispatchIncommingData()
             if(image!="" && database.find(image+"#"+question)!=database.end())
             {
                 consoleTextBrowser->append("<font color='green'>Znam odpowiedź: "+database.value(image+"#"+question)+"</font>");
-                socket->write(("ans"+database.value(image+"#"+question)).toUtf8());
+                socket->write(("ans"+database.value(image+"#"+question)+"\n").toUtf8());
             }
         }
         else if(line.left(3)=="lib")
@@ -194,6 +194,7 @@ void ControlPanelWidget::dispatchIncommingData()
         else if(line.left(3)=="rpr");
         else if(line.left(3)=="non");
         else if(line.left(3)=="rep");
+        else if(line.left(3)=="pkt");
         else
         {
             consoleTextBrowser->append("<font color='red'>Błąd protokołu: "+line+"</font>");
