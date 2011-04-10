@@ -61,8 +61,8 @@
      <property name="title">
       <string>Stan bazy</string>
      </property>
-     <layout class="QGridLayout" name="gridLayout_4">
-      <item row="0" column="0">
+     <layout class="QVBoxLayout" name="databaseStateVerticalLayout">
+      <item>
        <widget class="QLabel" name="databaseSizeLabel">
         <property name="alignment">
          <set>Qt::AlignCenter</set>

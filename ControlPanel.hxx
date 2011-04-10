@@ -6,7 +6,9 @@
 #include <QtCore/QTimer>
 #include <QtNetwork/QAbstractSocket>
 
+class queue;
 class QTcpSocket;
+class QLabel;
 
 class ControlPanelWidget : public QWidget, public Ui::ControlPanel
 {
@@ -40,6 +42,8 @@ private:
     QHash<QString,QString> database;
     QTimer syncTimer;
     QTimer reconnectTimer;
+    queue* effectivenessQueue;
+    QLabel* effectivenessLabel;
     
     void closeEvent(QCloseEvent *event);
     
@@ -48,4 +52,5 @@ private slots:
     void dispatchClientState(bool loggedIn);
     void dispatchIncommingData();
     void dispatchConnectionFailure();
+    void dispatchEffectivenessChange(double);
 };

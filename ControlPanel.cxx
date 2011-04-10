@@ -1,13 +1,15 @@
 #include "ControlPanel.hxx"
 
+#include "queue.hxx"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QString>
 #include <QtCore/QFile>
 #include <QtCore/QDataStream>
 #include <QtNetwork/QTcpSocket>
 #include <QtGui/QCloseEvent>
+#include <QtGui/QLabel>
 
-ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), loggedIn(false)
+ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), loggedIn(false), effectivenessLabel(0)
 {
     connect(this,SIGNAL(clientStateChanged(bool)),this,SLOT(dispatchClientState(bool)));
     setupUi(this);
@@ -18,6 +20,8 @@ ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), logge
     load();
     connect(&syncTimer,SIGNAL(timeout()),this,SLOT(store()));
     syncTimer.start(1000*60*10);
+    effectivenessQueue=new queue(this);
+    connect(effectivenessQueue,SIGNAL(effectivenessChanged(double)),this,SLOT(dispatchEffectivenessChange(double)));
 }
 
 ControlPanelWidget::~ControlPanelWidget()
@@ -116,25 +120,28 @@ void ControlPanelWidget::attemptLogin()
     socket->write(QString("log"+(nickLineEdit->text()==""?"NN":nickLineEdit->text())+"\n").toUtf8());
     logButton->setText(tr("Logowanie..."));
     logButton->setEnabled(false);
-    if(socket->waitForBytesWritten(-1))
-        setClientState(true);
-    else
-        dispatchClientState(loggedIn);
+//     if(socket->waitForBytesWritten(-1))
+//         setClientState(true);
+//     else
+//         dispatchClientState(loggedIn);
+    setClientState(true);
     connect(socket,SIGNAL(connected()),this,SLOT(attemptLogin()));
+    reconnectTimer.start(1000*10);
     connect(&reconnectTimer,SIGNAL(timeout()),this,SLOT(dispatchConnectionFailure()));
 }
 
 void ControlPanelWidget::attemptLogout()
 {
+    logButton->setText(tr("Wylogowywanie..."));
+    logButton->setEnabled(false);
     reconnectTimer.disconnect();
     disconnect(socket,SIGNAL(connected()),this,SLOT(attemptLogin()));
     socket->write("out\n");
-    logButton->setText(tr("Wylogowywanie..."));
-    logButton->setEnabled(false);
-    if(socket->waitForBytesWritten(-1))
-        setClientState(false);
-    else
-        dispatchClientState(loggedIn);
+//     if(socket->waitForBytesWritten(-1))
+//         setClientState(false);
+//     else
+//         dispatchClientState(loggedIn);
+    setClientState(false);
 }
 
 void ControlPanelWidget::attemptQuit()
@@ -180,11 +187,17 @@ void ControlPanelWidget::dispatchIncommingData()
         else if(line.left(3)=="lib")
         {
             QString answer=line.right(line.length()-3);
-            consoleTextBrowser->append("<font color='blue'>Poznano odpowiedź: "+answer+"</font>");
             if(image!="" && question!="")
             {
-                database.insert(image+"#"+question,answer);
-                databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
+                if(database.find(image+"#"+question)!=database.end())
+                    effectivenessQueue->push(true);
+                else
+                {
+                    effectivenessQueue->push(false);
+                    consoleTextBrowser->append("<font color='blue'>Poznano odpowiedź: "+answer+"</font>");
+                    database.insert(image+"#"+question,answer);
+                    databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
+                }
             }
             question="";
         }
@@ -198,6 +211,7 @@ void ControlPanelWidget::dispatchIncommingData()
         else if(line.left(3)=="non");
         else if(line.left(3)=="rep");
         else if(line.left(3)=="pkt");
+        else if(line.left(3)=="");
         else
         {
             consoleTextBrowser->append("<font color='red'>Błąd protokołu: "+line+"</font>");
@@ -235,5 +249,15 @@ void ControlPanelWidget::dispatchConnectionFailure()
 {
     consoleTextBrowser->append("<font color='purple'>Przekroczono dozwolony czas oczekiwania.<br/>Restartuję połączenie</font>");
     abortConnection();
-    attemptConnection();
+    QTimer::singleShot(2000,this,SLOT(attemptConnection()));
+}
+
+void ControlPanelWidget::dispatchEffectivenessChange(double newEffectiveness)
+{
+    if(!effectivenessLabel)
+    {
+        effectivenessLabel=new QLabel();
+        databaseStateVerticalLayout->addWidget(effectivenessLabel);
+    }
+    effectivenessLabel->setText(tr("Skuteczność: %L1%").arg(newEffectiveness*100,3,'f',0));
 }
