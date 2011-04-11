@@ -259,5 +259,5 @@ void ControlPanelWidget::dispatchEffectivenessChange(double newEffectiveness)
         effectivenessLabel=new QLabel();
         databaseStateVerticalLayout->addWidget(effectivenessLabel);
     }
-    effectivenessLabel->setText(tr("Skuteczność: %L1%").arg(newEffectiveness*100,3,'f',0));
+    effectivenessLabel->setText(tr("Skuteczność: %1%").arg(newEffectiveness*100,3,'f',0));
 }
