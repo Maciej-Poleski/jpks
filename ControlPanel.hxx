@@ -2,10 +2,13 @@
 
 #include "ui_ControlPanel.h"
 
-#include <QtNetwork/QAbstractSocket>
 #include <QtCore/QHash>
+#include <QtCore/QTimer>
+#include <QtNetwork/QAbstractSocket>
 
+class queue;
 class QTcpSocket;
+class QLabel;
 
 class ControlPanelWidget : public QWidget, public Ui::ControlPanel
 {
@@ -28,6 +31,8 @@ public slots:
     void attemptQuit();
     void abortConnection();
     void attemptDisconnect();
+    void store();
+    void load();
     
 private:
     QTcpSocket *socket;
@@ -35,6 +40,10 @@ private:
     QString image;
     QString question;
     QHash<QString,QString> database;
+    QTimer syncTimer;
+    QTimer reconnectTimer;
+    queue* effectivenessQueue;
+    QLabel* effectivenessLabel;
     
     void closeEvent(QCloseEvent *event);
     
@@ -42,4 +51,6 @@ private slots:
     void dispatchSocketState(QAbstractSocket::SocketState socketState);
     void dispatchClientState(bool loggedIn);
     void dispatchIncommingData();
+    void dispatchConnectionFailure();
+    void dispatchEffectivenessChange(double);
 };

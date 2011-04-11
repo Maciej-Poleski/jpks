@@ -1,13 +1,15 @@
 #include "ControlPanel.hxx"
 
+#include "queue.hxx"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QString>
 #include <QtCore/QFile>
 #include <QtCore/QDataStream>
 #include <QtNetwork/QTcpSocket>
 #include <QtGui/QCloseEvent>
+#include <QtGui/QLabel>
 
-ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), loggedIn(false)
+ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), loggedIn(false), effectivenessLabel(0)
 {
     connect(this,SIGNAL(clientStateChanged(bool)),this,SLOT(dispatchClientState(bool)));
     setupUi(this);
@@ -15,14 +17,11 @@ ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), logge
     connect(socket,SIGNAL(stateChanged(QAbstractSocket::SocketState)),this,SLOT(dispatchSocketState(QAbstractSocket::SocketState)));
     dispatchSocketState(socket->state());
     connect(socket,SIGNAL(readyRead()),this,SLOT(dispatchIncommingData()));
-    
-    QFile input(QCoreApplication::applicationDirPath()+"/database");
-    input.open(QIODevice::ReadOnly);
-    QDataStream stream(&input);
-    stream>>database;
-    input.close();
-    
-    databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
+    load();
+    connect(&syncTimer,SIGNAL(timeout()),this,SLOT(store()));
+    syncTimer.start(1000*60*10);
+    effectivenessQueue=new queue(this);
+    connect(effectivenessQueue,SIGNAL(effectivenessChanged(double)),this,SLOT(dispatchEffectivenessChange(double)));
 }
 
 ControlPanelWidget::~ControlPanelWidget()
@@ -116,24 +115,33 @@ void ControlPanelWidget::attemptConnection()
 
 void ControlPanelWidget::attemptLogin()
 {
+    image="";
+    question="";
     socket->write(QString("log"+(nickLineEdit->text()==""?"NN":nickLineEdit->text())+"\n").toUtf8());
     logButton->setText(tr("Logowanie..."));
     logButton->setEnabled(false);
-    if(socket->waitForBytesWritten(-1))
-        setClientState(true);
-    else
-        dispatchClientState(loggedIn);
+//     if(socket->waitForBytesWritten(-1))
+//         setClientState(true);
+//     else
+//         dispatchClientState(loggedIn);
+    setClientState(true);
+    connect(socket,SIGNAL(connected()),this,SLOT(attemptLogin()));
+    reconnectTimer.start(1000*10);
+    connect(&reconnectTimer,SIGNAL(timeout()),this,SLOT(dispatchConnectionFailure()));
 }
 
 void ControlPanelWidget::attemptLogout()
 {
-    socket->write("out\n");
     logButton->setText(tr("Wylogowywanie..."));
     logButton->setEnabled(false);
-    if(socket->waitForBytesWritten(-1))
-        setClientState(false);
-    else
-        dispatchClientState(loggedIn);
+    reconnectTimer.disconnect();
+    disconnect(socket,SIGNAL(connected()),this,SLOT(attemptLogin()));
+    socket->write("out\n");
+//     if(socket->waitForBytesWritten(-1))
+//         setClientState(false);
+//     else
+//         dispatchClientState(loggedIn);
+    setClientState(false);
 }
 
 void ControlPanelWidget::attemptQuit()
@@ -148,6 +156,7 @@ void ControlPanelWidget::abortConnection()
 
 void ControlPanelWidget::attemptDisconnect()
 {
+    reconnectTimer.disconnect();
     socket->disconnectFromHost();
 }
 
@@ -155,6 +164,7 @@ void ControlPanelWidget::dispatchIncommingData()
 {
     while(socket->canReadLine())
     {
+        reconnectTimer.start(1000*10);
         QString line=socket->readLine();
         line.truncate(line.length()-1);
         if(line.left(3)=="txt");
@@ -171,17 +181,23 @@ void ControlPanelWidget::dispatchIncommingData()
             if(image!="" && database.find(image+"#"+question)!=database.end())
             {
                 consoleTextBrowser->append("<font color='green'>Znam odpowiedź: "+database.value(image+"#"+question)+"</font>");
-                socket->write(("ans"+database.value(image+"#"+question)).toUtf8());
+                socket->write(("ans"+database.value(image+"#"+question)+"\n").toUtf8());
             }
         }
         else if(line.left(3)=="lib")
         {
             QString answer=line.right(line.length()-3);
-            consoleTextBrowser->append("<font color='blue'>Poznano odpowiedź: "+answer+"</font>");
             if(image!="" && question!="")
             {
-                database.insert(image+"#"+question,answer);
-                databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
+                if(database.find(image+"#"+question)!=database.end())
+                    effectivenessQueue->push(true);
+                else
+                {
+                    effectivenessQueue->push(false);
+                    consoleTextBrowser->append("<font color='blue'>Poznano odpowiedź: "+answer+"</font>");
+                    database.insert(image+"#"+question,answer);
+                    databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
+                }
             }
             question="";
         }
@@ -194,6 +210,8 @@ void ControlPanelWidget::dispatchIncommingData()
         else if(line.left(3)=="rpr");
         else if(line.left(3)=="non");
         else if(line.left(3)=="rep");
+        else if(line.left(3)=="pkt");
+        else if(line.left(3)=="");
         else
         {
             consoleTextBrowser->append("<font color='red'>Błąd protokołu: "+line+"</font>");
@@ -203,10 +221,43 @@ void ControlPanelWidget::dispatchIncommingData()
 
 void ControlPanelWidget::closeEvent(QCloseEvent *event)
 {
+    store();
+    event->accept();
+}
+
+void ControlPanelWidget::store()
+{
     QFile output(QCoreApplication::applicationDirPath()+"/database");
     output.open(QIODevice::WriteOnly);
     QDataStream stream(&output);
     stream<<database;
     output.close();
-    event->accept();
+}
+
+void ControlPanelWidget::load()
+{
+    QFile input(QCoreApplication::applicationDirPath()+"/database");
+    input.open(QIODevice::ReadOnly);
+    QDataStream stream(&input);
+    stream>>database;
+    input.close();
+    
+    databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
+}
+
+void ControlPanelWidget::dispatchConnectionFailure()
+{
+    consoleTextBrowser->append("<font color='purple'>Przekroczono dozwolony czas oczekiwania.<br/>Restartuję połączenie</font>");
+    abortConnection();
+    QTimer::singleShot(2000,this,SLOT(attemptConnection()));
+}
+
+void ControlPanelWidget::dispatchEffectivenessChange(double newEffectiveness)
+{
+    if(!effectivenessLabel)
+    {
+        effectivenessLabel=new QLabel();
+        databaseStateVerticalLayout->addWidget(effectivenessLabel);
+    }
+    effectivenessLabel->setText(tr("Skuteczność: %1%").arg(newEffectiveness*100,3,'f',0));
 }
