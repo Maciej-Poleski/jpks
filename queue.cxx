@@ -1,6 +1,6 @@
 #include "queue.hxx"
 
-queue::queue(QObject* parent) : QObject(parent)
+queue::queue(QObject* parent) : QObject(parent), sum(0)
 {}
 
 void queue::push(const bool& o)

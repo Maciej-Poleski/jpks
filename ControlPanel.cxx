@@ -9,7 +9,7 @@
 #include <QtGui/QCloseEvent>
 #include <QtGui/QLabel>
 
-ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), loggedIn(false), effectivenessLabel(0)
+ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QTabWidget(parent), loggedIn(false), effectivenessLabel(0)
 {
     connect(this,SIGNAL(clientStateChanged(bool)),this,SLOT(dispatchClientState(bool)));
     setupUi(this);
@@ -22,6 +22,7 @@ ControlPanelWidget::ControlPanelWidget(QWidget *parent) : QWidget(parent), logge
     syncTimer.start(1000*60*10);
     effectivenessQueue=new queue(this);
     connect(effectivenessQueue,SIGNAL(effectivenessChanged(double)),this,SLOT(dispatchEffectivenessChange(double)));
+    connect(messageLineEdit,SIGNAL(returnPressed()),this,SLOT(dispatchEnteredMessage()));
 }
 
 ControlPanelWidget::~ControlPanelWidget()
@@ -126,7 +127,7 @@ void ControlPanelWidget::attemptLogin()
 //         dispatchClientState(loggedIn);
     setClientState(true);
     connect(socket,SIGNAL(connected()),this,SLOT(attemptLogin()));
-    reconnectTimer.start(1000*10);
+    reconnectTimer.start(1000*15);
     connect(&reconnectTimer,SIGNAL(timeout()),this,SLOT(dispatchConnectionFailure()));
 }
 
@@ -164,10 +165,13 @@ void ControlPanelWidget::dispatchIncommingData()
 {
     while(socket->canReadLine())
     {
-        reconnectTimer.start(1000*10);
+        reconnectTimer.start(1000*15);
         QString line=socket->readLine();
         line.truncate(line.length()-1);
-        if(line.left(3)=="txt");
+        if(line.left(3)=="txt")
+        {
+            messagesTextBrowser->append(ASCUTF8(line.right(line.length()-3)));
+        }
         else if(line.left(3)=="cnt");
         else if(line.left(3)=="img")
         {
@@ -177,11 +181,11 @@ void ControlPanelWidget::dispatchIncommingData()
         else if(line.left(3)=="que")
         {
             question+=line.right(line.length()-3);
-            consoleTextBrowser->append("<font color='blue'>Pytanie: "+question+"</font>");
+            consoleTextBrowser->append("<font color='blue'>Pytanie: "+ASCUTF8(question)+"</font>");
             if(image!="" && database.find(image+"#"+question)!=database.end())
             {
-                consoleTextBrowser->append("<font color='green'>Znam odpowiedź: "+database.value(image+"#"+question)+"</font>");
                 socket->write(("ans"+database.value(image+"#"+question)+"\n").toUtf8());
+                consoleTextBrowser->append("<font color='green'>Znam odpowiedź: "+ASCUTF8(database.value(image+"#"+question))+"</font>");
             }
         }
         else if(line.left(3)=="lib")
@@ -194,7 +198,7 @@ void ControlPanelWidget::dispatchIncommingData()
                 else
                 {
                     effectivenessQueue->push(false);
-                    consoleTextBrowser->append("<font color='blue'>Poznano odpowiedź: "+answer+"</font>");
+                    consoleTextBrowser->append("<font color='blue'>Poznano odpowiedź: "+ASCUTF8(answer)+"</font>");
                     database.insert(image+"#"+question,answer);
                     databaseSizeLabel->setText(tr("Rozmiar: %1").arg(database.size()));
                 }
@@ -211,7 +215,10 @@ void ControlPanelWidget::dispatchIncommingData()
         else if(line.left(3)=="non");
         else if(line.left(3)=="rep");
         else if(line.left(3)=="pkt");
-        else if(line.left(3)=="");
+        else if(line.left(3)=="")
+        {
+            messagesTextBrowser->append("");
+        }
         else
         {
             consoleTextBrowser->append("<font color='red'>Błąd protokołu: "+line+"</font>");
@@ -260,4 +267,63 @@ void ControlPanelWidget::dispatchEffectivenessChange(double newEffectiveness)
         databaseStateVerticalLayout->addWidget(effectivenessLabel);
     }
     effectivenessLabel->setText(tr("Skuteczność: %1%").arg(newEffectiveness*100,3,'f',0));
+}
+
+void ControlPanelWidget::dispatchEnteredMessage()
+{
+    sendMessage(messageLineEdit->text());
+    messageLineEdit->setText("");
+}
+
+void ControlPanelWidget::sendMessage(const QString& message)
+{
+    socket->write(("ans"+UTF8ASC(message)+"\n").toUtf8());
+}
+
+QString ControlPanelWidget::UTF8ASC(const QString& string)
+{
+    QString cmd=string;
+    cmd.replace("ą", "%a");
+    cmd.replace("ć", "%c");
+    cmd.replace("ę", "%e");
+    cmd.replace("ł", "%l");
+    cmd.replace("ń", "%n");
+    cmd.replace("ó", "%o");
+    cmd.replace("ś", "%s");
+    cmd.replace("ź", "%x");
+    cmd.replace("ż", "%z");
+    cmd.replace("Ą", "%A");
+    cmd.replace("Ć", "%C");
+    cmd.replace("Ę", "%E");
+    cmd.replace("Ł", "%L");
+    cmd.replace("Ń", "%N");
+    cmd.replace("Ó", "%O");
+    cmd.replace("Ś", "%S");
+    cmd.replace("Ź", "%X");
+    cmd.replace("Ż", "%Z");
+    return cmd;
+}
+
+QString ControlPanelWidget::ASCUTF8(const QString& string)
+{
+    QString cmd=string;
+    cmd.replace("%a", "ą");
+    cmd.replace("%c", "ć");
+    cmd.replace("%e", "ę");
+    cmd.replace("%l", "ł");
+    cmd.replace("%n", "ń");
+    cmd.replace("%o", "ó");
+    cmd.replace("%s", "ś");
+    cmd.replace("%x", "ź");
+    cmd.replace("%z", "ż");
+    cmd.replace("%A", "Ą");
+    cmd.replace("%C", "Ć");
+    cmd.replace("%E", "Ę");
+    cmd.replace("%L", "Ł");
+    cmd.replace("%N", "Ń");
+    cmd.replace("%O", "Ó");
+    cmd.replace("%S", "Ś");
+    cmd.replace("%X", "Ź");
+    cmd.replace("%Z", "Ż");
+    return cmd;
 }
