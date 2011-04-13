@@ -10,7 +10,7 @@ class queue;
 class QTcpSocket;
 class QLabel;
 
-class ControlPanelWidget : public QWidget, public Ui::ControlPanel
+class ControlPanelWidget : public QTabWidget, public Ui::ControlPanel
 {
     Q_OBJECT
     
@@ -33,6 +33,7 @@ public slots:
     void attemptDisconnect();
     void store();
     void load();
+    void sendMessage(const QString& message);
     
 private:
     QTcpSocket *socket;
@@ -46,6 +47,8 @@ private:
     QLabel* effectivenessLabel;
     
     void closeEvent(QCloseEvent *event);
+    QString UTF8ASC(const QString& string);
+    QString ASCUTF8(const QString& string);
     
 private slots:
     void dispatchSocketState(QAbstractSocket::SocketState socketState);
@@ -53,4 +56,5 @@ private slots:
     void dispatchIncommingData();
     void dispatchConnectionFailure();
     void dispatchEffectivenessChange(double);
+    void dispatchEnteredMessage();
 };
